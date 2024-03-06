@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Camera Stream with Hand Tracking</title>
+</head>
+<body>
+    <h1>Mobile Camera Stream with Hand Tracking</h1>
+    <canvas id="canvasElement" width="640" height="480"></canvas>
+    <img id="imageElement" width="640" height="480">
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const canvasElement = document.getElementById('canvasElement');
+        const ctx = canvasElement.getContext('2d');
+        const socket = io.connect('https://' + document.domain + ':' + location.port);
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function (stream) {
+                const videoElement = document.createElement('video');
+                videoElement.srcObject = stream;
+                videoElement.play();
+
+                videoElement.addEventListener('loadedmetadata', function() {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                });
+
+                videoElement.addEventListener('play', function () {
+                    const drawFrame = function () {
+                        ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                        const imageData = canvasElement.toDataURL('image/jpeg', 0.8);
+                        socket.emit('frame', { image: imageData });
+                        requestAnimationFrame(drawFrame);
+                    };
+                    drawFrame();
+                });
+
+                // document.body.appendChild(videoElement);
+            })
+            .catch(function (error) {
+                console.error('Error accessing camera:', error);
+            });
+
+        socket.on('image', function(data) {
+            imageElement.src = data.image;
+            const img = new Image();
+            img.onload = function() {
+                ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                ctx.drawImage(img, 0, 0, canvasElement.width, canvasElement.height);
+            };
+            img.src = data.image;
+        });
+    </script>
+</body>
+</html>

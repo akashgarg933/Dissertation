@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPS Game</title>
+    <style>
+        h1 {
+            color: black;
+            /* Change color to black */
+        }
+
+        body {
+            text-align: center;
+        }
+
+        video {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        #screen1,
+        #screen2,
+        #screen3 {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+
+        }
+
+        #canvasElement,
+        #imageElement {
+            display: block;
+            margin: 20px auto;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        #buttonContainer {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        #startButton {
+            margin-top: 200px;
+            padding: 15px 30px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- <video style="position: fixed; top: 0; width: 100%; height: 100%; z-index: -1;" id="background" autoplay playsinline loop> -->
+    <video autoplay muted loop>
+        <source src="{{ url_for('static', filename='bg_video.mp4') }}" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <!-- Screen 1 -->
+    <div id="screen1">
+        <h1>Welcome to the Rock Paper Scissor Duel!</h1>
+        <button id="startButton" onclick="showScreen('screen2')">Start Game</button>
+    </div>
+
+    <!-- Screen 2 -->
+    <div id="screen2">
+        <h1>Enter Player Names and Choose Game Mode</h1>
+        <label for="player1">Player 1 Name:</label>
+        <input type="text" id="player1" placeholder="Enter Player 1's Name">
+
+        <label for="player2">Player 2 Name:</label>
+        <input type="text" id="player2" placeholder="Enter Player 2's Name">
+
+        <div id="buttonContainer">
+            <button onclick="startSinglePlayer()">Single Player</button>
+            <button onclick="startMultiPlayer()">Multiplayer</button>
+        </div>
+    </div>
+
+    <!-- Screen 3 -->
+    <div id="screen3">
+        <h1>Mobile Camera Stream with Hand Tracking</h1>
+        <canvas id="canvasElement" style="visibility: hidden; opacity: 0; pointer-events: none;"></canvas>
+
+        <img id="imageElement">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+        <script>
+            // Function to check if the device is in landscape or portrait mode
+            function checkOrientation() {
+                if (window.orientation === 0 || window.orientation === 180) {
+                    // Portrait mode
+                    alert("Please rotate your device to landscape mode for better experience.");
+                } else {
+                    // Landscape mode
+                    console.log("Landscape mode");
+                }
+            }
+
+            // Call the function when the page loads
+            checkOrientation();
+
+            // Listen for orientation change events
+            window.addEventListener("orientationchange", function () {
+                // Call the function when the orientation changes
+                checkOrientation();
+            });
+
+            const imageElement = document.getElementById('imageElement');
+            const canvasElement = document.getElementById('canvasElement');
+            imageElement.width = window.innerWidth;
+            imageElement.height = window.innerHeight;
+            canvasElement.width = window.innerWidth;
+            canvasElement.height = window.innerHeight;
+            let lastRequestTime = Date.now();
+            const MAX_FRAME_RATE = 30; // Desired maximum FPS 
+            const DELAY_BETWEEN_REQUESTS = Math.floor((1 / MAX_FRAME_RATE) * 1000); // Delay in ms
+            const ctx = canvasElement.getContext('2d');
+            const socket = io.connect('https://' + document.domain + ':' + location.port);
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    const videoElement = document.createElement('video');
+                    videoElement.srcObject = stream;
+                    videoElement.play();
+                    videoElement.style.visibility = 'hidden'; // Hides the video element visually
+
+
+                    // videoElement.addEventListener('loadedmetadata', function() {
+                    //     canvasElement.width = videoElement.videoWidth;
+                    //     canvasElement.height = videoElement.videoHeight;
+                    // });
+                    document.addEventListener('keydown', function(event) {
+            // Send the key code to the server
+            socket.emit('key_input', {key: event.keyCode});
+        });
+
+                    videoElement.addEventListener('play', function () {
+                        const drawFrame = function () {
+                            const now = Date.now();
+                            if ((now - lastRequestTime) >= DELAY_BETWEEN_REQUESTS) {
+                                // if (true) {
+                                ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                                const imageData = canvasElement.toDataURL('image/jpeg', 0.8);
+                                const timestamp = new Date().getTime();
+                                socket.emit('frame', { image: imageData, timestamp: timestamp , width:window.innerWidth ,height : window.innerHeight});
+                                lastRequestTime = now
+                            }
+                            requestAnimationFrame(drawFrame);
+                        };
+                        drawFrame();
+                    });
+
+                    // document.body.appendChild(videoElement);
+                })
+                .catch(function (error) {
+                    console.error('Error accessing camera:', error);
+                });
+
+            socket.on('image', function (data) {
+                imageElement.src = data.image;
+                const img = new Image();
+                img.onload = function () {
+                    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                    ctx.drawImage(img, 0, 0, canvasElement.width, canvasElement.height);
+                };
+                img.src = data.image;
+            });
+        </script>
+    </div>
+
+    <script>
+        function showScreen(screenId) {
+            document.getElementById('screen1').style.display = 'none';
+            document.getElementById('screen2').style.display = 'none';
+            document.getElementById('screen3').style.display = 'none';
+
+            document.getElementById(screenId).style.display = 'block';
+        }
+
+        function startSinglePlayer() {
+            showScreen('screen3');
+            // Additional logic for single-player mode
+        }
+
+        function startMultiPlayer() {
+            showScreen('screen3');
+            // Additional logic for multiplayer mode
+        }
+
+        // Show Screen 1 initially
+        showScreen('screen1');
+    </script>
+
+</body>
+
+</html>
