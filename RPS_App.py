@@ -87,7 +87,7 @@ def send_value():
 
 @app.route('/reset_value', methods=['POST'])
 def reset_value():
-    global scores
+    global scores,P1last3,P2last3
     data = request.get_json()
     button_value = data.get('value')
     print("Received button value:", button_value)
