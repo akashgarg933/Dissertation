@@ -44,6 +44,14 @@
             margin: 20px auto;
         }
 
+        #imageElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
         input,
         button {
             padding: 10px;
@@ -54,6 +62,32 @@
         #buttonContainer {
             display: flex;
             justify-content: space-around;
+        }
+
+        #resetButton {
+            position: absolute;
+            top: 70%;
+            /* Adjust vertical position */
+            left: 45%;
+            /* Adjust horizontal position */
+            transform: translate(-50%, -50%);
+            /* Center the button */
+            padding: 10px 20px;
+            font-size: 16px;
+            z-index: 1;
+        }
+
+        #sendButton {
+            position: absolute;
+            top: 70%;
+            /* Adjust vertical position */
+            left: 55%;
+            /* Adjust horizontal position */
+            transform: translate(-50%, -50%);
+            /* Center the button */
+            padding: 10px 20px;
+            font-size: 16px;
+            z-index: 1;
         }
 
         #startButton {
@@ -81,23 +115,82 @@
     <!-- Screen 2 -->
     <div id="screen2">
         <h1>Enter Player Names and Choose Game Mode</h1>
-        <label for="player1">Player 1 Name:</label>
-        <input type="text" id="player1" placeholder="Enter Player 1's Name">
+        <form id="gameForm">
+            <label for="player1">Player 1 Name:</label>
+            <input type="text" id="player1" placeholder="Enter Player 1's Name">
 
-        <label for="player2">Player 2 Name:</label>
-        <input type="text" id="player2" placeholder="Enter Player 2's Name">
+            <label for="player2">Player 2 Name:</label>
+            <input type="text" id="player2" placeholder="Enter Player 2's Name">
 
-        <div id="buttonContainer">
-            <button onclick="startSinglePlayer()">Single Player</button>
-            <button onclick="startMultiPlayer()">Multiplayer</button>
-        </div>
+            <div id="buttonContainer">
+                <input type="radio" id="singlePlayerButton" name="gameMode" value="single">
+                <label for="singlePlayerButton">Single Player</label>
+
+                <input type="radio" id="multiPlayerButton" name="gameMode" value="multiplayer" checked>
+                <label for="multiPlayerButton">Multi player</label>
+            </div>
+            <div id="buttonContainer">
+                <button type="submit" onclick="startSinglePlayer()">Start Game</button>
+            </div>
+        </form>
+
+
+        <script>
+            document.getElementById("gameForm").addEventListener("submit", function (event) {
+                event.preventDefault(); // Prevent the form from submitting normally
+
+                // Get form input values
+                var player1Name = document.getElementById("player1").value;
+                var player2Name = document.getElementById("player2").value;
+                var gameMode = document.querySelector('input[name="gameMode"]:checked').value;
+
+                // Create data object to send to the server
+                var data = {
+                    player1Name: player1Name,
+                    player2Name: player2Name,
+                    gameMode: gameMode
+                };
+
+                // Send data to Flask server using fetch API
+                fetch('/process_form', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                })
+                    .then(response => {
+                        if (response.ok) {
+                            console.log("Form data sent successfully!");
+                            // Optionally, redirect to another page or perform other actions upon successful submission
+                        } else {
+                            console.error("Error sending form data.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error:", error);
+                    });
+            });
+
+            // Event listener for Single Player button
+            document.getElementById("singlePlayerButton").addEventListener("click", function (event) {
+                document.getElementById("multiPlayerForm").style.display = "none";
+            });
+
+            // Event listener for Multiplayer button
+            document.getElementById("multiPlayerButton").addEventListener("click", function (event) {
+                document.getElementById("multiPlayerForm").style.display = "block";
+            });
+
+        </script>
     </div>
 
     <!-- Screen 3 -->
     <div id="screen3">
         <h1>Mobile Camera Stream with Hand Tracking</h1>
         <canvas id="canvasElement" style="visibility: hidden; opacity: 0; pointer-events: none;"></canvas>
-
+        <button id="sendButton">Start</button>
+        <button id="resetButton">Reset Score</button>
         <img id="imageElement">
 
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
@@ -120,6 +213,38 @@
             window.addEventListener("orientationchange", function () {
                 // Call the function when the orientation changes
                 checkOrientation();
+            });
+
+            document.getElementById("sendButton").addEventListener("click", function () {
+                var buttonValue = "Start";
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", "/send_value", true);
+                xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                xhr.send(JSON.stringify({ "value": buttonValue }));
+
+                xhr.onload = function () {
+                    if (xhr.status == 200) {
+                        document.getElementById("statusMessage").innerText = "Value sent successfully!";
+                    } else {
+                        document.getElementById("statusMessage").innerText = "Error sending value.";
+                    }
+                };
+            });
+
+            document.getElementById("resetButton").addEventListener("click", function () {
+                var buttonValue = "reset";
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", "/reset_value", true);
+                xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                xhr.send(JSON.stringify({ "value": buttonValue }));
+
+                xhr.onload = function () {
+                    if (xhr.status == 200) {
+                        document.getElementById("statusMessage").innerText = "Value sent successfully!";
+                    } else {
+                        document.getElementById("statusMessage").innerText = "Error sending value.";
+                    }
+                };
             });
 
             const imageElement = document.getElementById('imageElement');
@@ -146,10 +271,10 @@
                     //     canvasElement.width = videoElement.videoWidth;
                     //     canvasElement.height = videoElement.videoHeight;
                     // });
-                    document.addEventListener('keydown', function(event) {
-            // Send the key code to the server
-            socket.emit('key_input', {key: event.keyCode});
-        });
+                    document.addEventListener('keydown', function (event) {
+                        // Send the key code to the server
+                        socket.emit('key_input', { key: event.keyCode });
+                    });
 
                     videoElement.addEventListener('play', function () {
                         const drawFrame = function () {
@@ -159,7 +284,7 @@
                                 ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
                                 const imageData = canvasElement.toDataURL('image/jpeg', 0.8);
                                 const timestamp = new Date().getTime();
-                                socket.emit('frame', { image: imageData, timestamp: timestamp , width:window.innerWidth ,height : window.innerHeight});
+                                socket.emit('frame', { image: imageData, timestamp: timestamp, width: window.innerWidth, height: window.innerHeight });
                                 lastRequestTime = now
                             }
                             requestAnimationFrame(drawFrame);
