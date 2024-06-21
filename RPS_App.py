@@ -12,6 +12,7 @@ import cvzone
 from cvzone.HandTrackingModule import HandDetector
 import time
 import random
+from playsound import playsound
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -22,6 +23,7 @@ detectorP2 = HandDetector(maxHands=1)
 
 
 timer = 0
+errorMessage = None
 initialTime = time.time()
 stateResult = False
 startGame = False
@@ -95,6 +97,7 @@ def reset_value():
         scores = [0, 0]
         P1last3=[]
         P2last3=[]
+        button_value=""
     return {'status': 'success'}
 
 
@@ -130,6 +133,30 @@ def overlay_image(base_image, overlay_image, x, y):
 
     return roi
 
+
+def one_time_call(func):
+    def wrapper(*args, **kwargs):
+        if not wrapper.has_been_called:
+            wrapper.has_been_called = True
+            return func(*args, **kwargs)
+        # else:
+            # print("Function has already been called once.")
+    
+    wrapper.has_been_called = False
+    
+    def reset():
+        wrapper.has_been_called = False
+        # print("Function has been reset.")
+    
+    wrapper.reset = reset
+    return wrapper
+
+@one_time_call
+def play_error_sound(): 
+    playsound("static/pre-drop-3-2-1-go-vocal-spoken_128bpm_F_major-[AudioTrimmer.com].wav")
+
+
+
 @app.route('/process_form', methods=['POST'])
 def process_form():
     global player1name,player2name,gameMode
@@ -151,7 +178,7 @@ def process_form():
 
 @socketio.on('frame')
 def generate_frames(frame_data):
-    global startGame, stateResult, timer, scores, playerMoveP1, playerMoveP2,initialTime,keyPress,gameMode,player1name,player2name
+    global startGame, stateResult, timer, scores, playerMoveP1, playerMoveP2,initialTime,keyPress,gameMode,player1name,player2name,errorMessage
     img_str = frame_data['image'].split(',')[1]
     img_bytes = base64.b64decode(img_str)
     np_arr = np.frombuffer(img_bytes, np.uint8)
@@ -176,22 +203,29 @@ def generate_frames(frame_data):
     cv2.line(imgScaled, (height // 2, 0), (height // 2, height), (255, 255, 255), 2)
 
     # Find Hands for Player 1 (Left side)
-    handsP1, imgP1 = detectorP1.findHands(imgLeft)
+    try :
+        handsP1, imgP1 = detectorP1.findHands(imgLeft)
+    except Exception as e :
+        pass
 
     # Find Hands for Player 2 (Right side)
     if gameMode != 'single':
-        handsP2, imgP2 = detectorP2.findHands(imgRight)
+        try:
+            handsP2, imgP2 = detectorP2.findHands(imgRight)
+        except Exception as e :
+            pass
 
     if startGame:
         if stateResult is False:
             timer = time.time() - initialTime
-            cv2.putText(imgBG, str(int(timer)), (605, 435), cv2.FONT_HERSHEY_PLAIN, 6, (255, 0, 255), 4)
+            play_error_sound()
+            cv2.putText(imgBG, str(3-int(timer)), (605, 435), cv2.FONT_HERSHEY_PLAIN, 6, (255, 0, 255), 4)
 
             if timer > 3:
+                play_error_sound.reset()
                 stateResult = True
                 timer = 0
                 print(gameMode)
-                # print(handP1)
                 if ((gameMode == 'multiplayer' and handsP1 and handsP2) or (gameMode == 'single' and  handsP1)):
                     handP1 = handsP1[0]
                     lmListP1 = handP1["lmList"]
@@ -248,6 +282,8 @@ def generate_frames(frame_data):
                         elif fingersP2 == [0, 1, 1, 0, 0]:#scissor
                             print("SCISSOR")
                             playerMoveP2 = 3 
+                        else:
+                            playerMoveP2=0
                     
                     if (P1lengthIM<P1lengthPalm//2 and P1lengthRP<P1lengthPalm*.75 and P1lengthMR>P1lengthPalm*.75 and fingersP1 == [1, 1, 1, 1, 1]):#SPOCK
                         print("SPOCK")
@@ -264,9 +300,15 @@ def generate_frames(frame_data):
                     elif fingersP1 == [0, 1, 1, 0, 0]:#scissor
                         print("SCISSOR")
                         playerMoveP1 = 3 
+                    else:
+                        playerMoveP1=0
 
                     if(gameMode=='single'):
                         playerMoveP2=random.randint(1, 5)
+
+                    if(playerMoveP1!=0 and playerMoveP2!=0):
+                        addMoveP1(movelist[playerMoveP1])
+                        addMoveP2(movelist[playerMoveP2])
 
                     if (playerMoveP1 == ROCK and (playerMoveP2 == SCISSORS or playerMoveP2 == LIZARD)) or \
                             (playerMoveP1 == PAPER and (playerMoveP2 == ROCK or playerMoveP2 == SPOCK)) or \
@@ -280,12 +322,33 @@ def generate_frames(frame_data):
                             (playerMoveP2 == LIZARD and (playerMoveP1 == SPOCK or playerMoveP1 == PAPER)) or \
                             (playerMoveP2 == SPOCK and (playerMoveP1 == SCISSORS or playerMoveP1 == ROCK)):
                         scores[1] += 1  # Player 2 wins
-                    if(playerMoveP1!=0 and playerMoveP2!=0):
-                        addMoveP1(movelist[playerMoveP1])
-                        addMoveP2(movelist[playerMoveP2])
+                    
+                    if(gameMode == 'multiplayer' and playerMoveP1==0 and playerMoveP2==0):#for gesture 
+                        errorMessage=("No gesture recognize for both player")
+                    elif(gameMode == 'multiplayer' and playerMoveP1==0):
+                        errorMessage=("No gesture recognize for player 2")
+                    elif(gameMode == 'multiplayer' and playerMoveP2==0):
+                        errorMessage=("No gesture recognize for player 1")
+                    elif(gameMode == 'single' and  playerMoveP1==0):
+                        errorMessage=("No gesture recognize for player 1")
+
     #Left  player 1
     #Right player 2
-                        
+                elif(gameMode == 'multiplayer' and handsP1==[] and handsP2==[]):#for hand 
+                    errorMessage=("No hand found for both player")
+                elif(gameMode == 'multiplayer' and handsP1==[]):
+                    errorMessage=("No hand found for player 2")
+                elif(gameMode == 'multiplayer' and handsP2==[]):
+                    errorMessage=("No hand found for player 1")
+                elif(gameMode == 'single' and  handsP1==[]):
+                    errorMessage=("No hand found for player 1")
+
+
+
+    if errorMessage!=None:
+        cv2.putText(imgBG, errorMessage, (200, 705), cv2.FONT_HERSHEY_PLAIN, 3, (0, 255, 0), 5)
+        
+                
     # print('random ',playerMoveP2)
     if gameMode != 'single': 
         # print("game is multiplayer")                   
@@ -297,11 +360,9 @@ def generate_frames(frame_data):
     # imgBG[234:654, 93:493]   = cv2.flip(cv2.resize(imgP2, (400, 420), None, 2, 1),1)
     imgBG[234:654, 795:1195] = cv2.flip(cv2.resize(imgP1, (400, 420), None, 2, 1),1)
 
-
-
-    if(playerMoveP1!=0 and playerMoveP2!=0):
-        imgBG=stitch_images(P2last3,50,50,30,180,250,imgBG)
-        imgBG=stitch_images(P1last3,50,50,30,882,250,imgBG)
+    #last 3 moves 
+    imgBG=stitch_images(P2last3,50,50,30,180,250,imgBG)
+    imgBG=stitch_images(P1last3,50,50,30,882,250,imgBG)
 
 
     cv2.putText(imgBG, str(scores[1]), (410, 215), cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 6)
@@ -323,6 +384,7 @@ def generate_frames(frame_data):
         initialTime = time.time()
         stateResult = False
         keyPress=0
+        errorMessage=None
 
     _, buffer = cv2.imencode('.jpg', imgBG)
 
